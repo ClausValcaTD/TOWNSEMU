@@ -6,6 +6,7 @@
 
 #include <string>
 #include <cstring>
+#include <vector>
 
 // ── Libretro callbacks (set by frontend) ──────────────────────────
 static retro_video_refresh_t         video_cb        = nullptr;
@@ -16,9 +17,15 @@ static retro_environment_t           environ_cb      = nullptr;
 static retro_log_printf_t            log_cb          = nullptr;
 
 // ── Emulator state ────────────────────────────────────────────────
-static FMTownsCommon  *g_towns  = nullptr;
-static Headless_Mode  *g_world  = nullptr;
-static bool            g_loaded = false;
+static FMTownsCommon       *g_towns      = nullptr;
+static Headless_Mode       *g_world      = nullptr;
+static TownsThread          g_thread;
+static std::string          g_system_dir;
+static std::string          g_disc_path;
+static bool                 g_loaded     = false;
+
+// Forward declaration
+static void towns_cleanup();
 
 // ─────────────────────────────────────────────────────────────────
 // Required libretro API
@@ -49,8 +56,24 @@ RETRO_API void retro_init(void)
     if (log_cb) log_cb(RETRO_LOG_INFO, "[TOWNSEMU] retro_init\n");
 }
 
+static void towns_cleanup()
+{
+    if (g_towns)
+    {
+        delete g_towns;
+        g_towns = nullptr;
+    }
+    if (g_world)
+    {
+        delete g_world;
+        g_world = nullptr;
+    }
+    g_loaded = false;
+}
+
 RETRO_API void retro_deinit(void)
 {
+    towns_cleanup();
     if (log_cb) log_cb(RETRO_LOG_INFO, "[TOWNSEMU] retro_deinit\n");
 }
 
@@ -81,10 +104,28 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info)
 
 RETRO_API bool retro_load_game(const struct retro_game_info *game)
 {
-    if (log_cb) log_cb(RETRO_LOG_INFO, "[TOWNSEMU] retro_load_game: %s\n",
-                       game ? game->path : "(null)");
+    if (!game || !game->path)
+    {
+        if (log_cb) log_cb(RETRO_LOG_ERROR, "[TOWNSEMU] No disc image provided\n");
+        return false;
+    }
 
-    // Pixel format — we want XRGB8888
+    // ── 1. Get system directory from frontend ──────────────────────
+    const char *sys_dir = nullptr;
+    if (!environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys_dir) || !sys_dir)
+    {
+        if (log_cb) log_cb(RETRO_LOG_ERROR, "[TOWNSEMU] Cannot get system directory\n");
+        return false;
+    }
+    g_system_dir = std::string(sys_dir) + "/fmtowns";
+    g_disc_path  = game->path;
+
+    if (log_cb) log_cb(RETRO_LOG_INFO,
+        "[TOWNSEMU] system dir : %s\n", g_system_dir.c_str());
+    if (log_cb) log_cb(RETRO_LOG_INFO,
+        "[TOWNSEMU] disc image : %s\n", g_disc_path.c_str());
+
+    // ── 2. Pixel format ────────────────────────────────────────────
     enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
     if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt))
     {
@@ -92,13 +133,46 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
         return false;
     }
 
+    // ── 3. Build argv for TOWNSEMU ─────────────────────────────────
+    // Equivalent to: Tsugaru_CUI <rom_dir> -CD <disc_image>
+    std::vector<std::string> args = {
+        "townsemu_libretro",   // argv[0] placeholder
+        g_system_dir,          // ROM directory
+        "-CD", g_disc_path     // disc image
+    };
+
+    std::vector<const char*> cargs;
+    for (auto &s : args) cargs.push_back(s.c_str());
+
+    TownsARGV argv;
+    argv.AnalyzeCommandParameter((int)cargs.size(), const_cast<char**>(cargs.data()));
+
+    // ── 4. Create emulator objects ─────────────────────────────────
+    towns_cleanup(); // safety: clean previous session if any
+
+    g_world = new Headless_Mode();
+    g_towns = new FMTownsWithMediumFidelityCPU();
+
+    // ── 5. Setup emulator & load BIOS / mount disc ────────────────
+    if (!FMTownsCommon::Setup(*g_towns, g_world, nullptr, argv))
+    {
+        if (log_cb) log_cb(RETRO_LOG_ERROR,
+            "[TOWNSEMU] Failed to load BIOS from: %s\n", g_system_dir.c_str());
+        towns_cleanup();
+        return false;
+    }
+
+    // ── 6. Initialize hardware ─────────────────────────────────────
+    g_towns->PowerOn();
+
     g_loaded = true;
+    if (log_cb) log_cb(RETRO_LOG_INFO, "[TOWNSEMU] Emulator ready\n");
     return true;
 }
 
 RETRO_API void retro_unload_game(void)
 {
-    g_loaded = false;
+    towns_cleanup();
     if (log_cb) log_cb(RETRO_LOG_INFO, "[TOWNSEMU] retro_unload_game\n");
 }
 
