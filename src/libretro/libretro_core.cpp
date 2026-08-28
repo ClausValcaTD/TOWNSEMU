@@ -16,13 +16,53 @@ static retro_input_state_t           input_state_cb  = nullptr;
 static retro_environment_t           environ_cb      = nullptr;
 static retro_log_printf_t            log_cb          = nullptr;
 
+// ── Custom Sound Connection ───────────────────────────────────────
+class LibretroSound : public Outside_World::Sound
+{
+public:
+    std::vector<int16_t> pcm_buffer;
+
+    void Start(void) override {}
+    void Stop(void) override {}
+    void Polling(void) override {}
+
+    void CDDAPlay(const DiscImage &discImg,DiscImage::MinSecFrm from,DiscImage::MinSecFrm to,bool repeat,unsigned int,unsigned int) override {}
+    void CDDASetVolume(float leftVol,float rightVol) override {}
+    void CDDAStop(void) override {}
+    void CDDAPause(void) override {}
+    void CDDAResume(void) override {}
+    bool CDDAIsPlaying(void) override { return false; }
+    DiscImage::MinSecFrm CDDACurrentPosition(void) override
+    {
+        DiscImage::MinSecFrm msf;
+        msf.FromHSG(0);
+        return msf;
+    }
+
+    void FMPCMPlay(std::vector<unsigned char> &wave) override
+    {
+        size_t nsamples = wave.size() / 2;
+        const int16_t *src = reinterpret_cast<const int16_t*>(wave.data());
+        pcm_buffer.insert(pcm_buffer.end(), src, src + nsamples);
+    }
+
+    void FMPCMPlayStop(void) override {}
+    bool FMPCMChannelPlaying(void) override { return false; }
+
+    void BeepPlay(int samplingRate, std::vector<unsigned char> &wave) override {}
+    void BeepPlayStop(void) override {}
+    bool BeepChannelPlaying(void) const override { return false; }
+};
+
 // ── Emulator state ────────────────────────────────────────────────
-static FMTownsCommon       *g_towns      = nullptr;
-static Headless_Mode       *g_world      = nullptr;
-static TownsThread          g_thread;
-static std::string          g_system_dir;
-static std::string          g_disc_path;
-static bool                 g_loaded     = false;
+static FMTownsWithMediumFidelityCPU *g_towns  = nullptr;
+static Headless_Mode                *g_world  = nullptr;
+static LibretroSound                *g_sound  = nullptr;
+static TownsThread                   g_thread;
+static std::string                   g_system_dir;
+static std::string                   g_save_dir;
+static std::string                   g_disc_path;
+static bool                          g_loaded = false;
 
 // Forward declaration
 static void towns_cleanup();
@@ -52,6 +92,7 @@ RETRO_API void retro_init(void)
 {
     g_towns = nullptr;
     g_world = nullptr;
+    g_sound = nullptr;
     g_loaded = false;
     if (log_cb) log_cb(RETRO_LOG_INFO, "[TOWNSEMU] retro_init\n");
 }
@@ -67,6 +108,11 @@ static void towns_cleanup()
     {
         delete g_world;
         g_world = nullptr;
+    }
+    if (g_sound)
+    {
+        delete g_sound;
+        g_sound = nullptr;
     }
     g_loaded = false;
 }
@@ -110,7 +156,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
         return false;
     }
 
-    // ── 1. Get system directory from frontend ──────────────────────
+    // ── 1. Get system & save directories from frontend ──────────────
     const char *sys_dir = nullptr;
     if (!environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sys_dir) || !sys_dir)
     {
@@ -118,10 +164,19 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
         return false;
     }
     g_system_dir = std::string(sys_dir) + "/fmtowns";
+
+    const char *sav_dir = nullptr;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &sav_dir) && sav_dir)
+        g_save_dir = std::string(sav_dir);
+    else
+        g_save_dir = g_system_dir; // fallback
+
     g_disc_path  = game->path;
 
     if (log_cb) log_cb(RETRO_LOG_INFO,
         "[TOWNSEMU] system dir : %s\n", g_system_dir.c_str());
+    if (log_cb) log_cb(RETRO_LOG_INFO,
+        "[TOWNSEMU] save dir   : %s\n", g_save_dir.c_str());
     if (log_cb) log_cb(RETRO_LOG_INFO,
         "[TOWNSEMU] disc image : %s\n", g_disc_path.c_str());
 
@@ -134,11 +189,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     }
 
     // ── 3. Build argv for TOWNSEMU ─────────────────────────────────
-    // Equivalent to: Tsugaru_CUI <rom_dir> -CD <disc_image>
+    std::string cmos_path = g_save_dir + "/fmtowns.cmos";
     std::vector<std::string> args = {
         "townsemu_libretro",   // argv[0] placeholder
         g_system_dir,          // ROM directory
-        "-CD", g_disc_path     // disc image
+        "-CD", g_disc_path,    // disc image
+        "-CMOS", cmos_path,    // CMOS file
+        "-NOWAITBOOT"          // Faster boot
     };
 
     std::vector<const char*> cargs;
@@ -152,6 +209,11 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
 
     g_world = new Headless_Mode();
     g_towns = new FMTownsWithMediumFidelityCPU();
+    g_sound = new LibretroSound();
+
+    g_towns->sound.SetOutsideWorld(g_sound);
+    g_towns->sound.SetCDROMPointer(&g_towns->cdrom);
+    g_towns->sound.SetSCSIPointer(&g_towns->scsi);
 
     // ── 5. Setup emulator & load BIOS / mount disc ────────────────
     if (!FMTownsCommon::Setup(*g_towns, g_world, nullptr, argv))
@@ -178,12 +240,86 @@ RETRO_API void retro_unload_game(void)
 
 RETRO_API void retro_run(void)
 {
-    if (!g_loaded) return;
+    if (!g_loaded || !g_towns || !g_world) return;
+
+    // ── 1. Input ───────────────────────────────────────────────────
     if (input_poll_cb) input_poll_cb();
 
-    // TODO Issue #2: run one emulation frame here
-    // TODO Issue #3: push framebuffer via video_cb
-    // TODO Issue #5: push audio via audio_batch_cb
+    if (input_state_cb)
+    {
+        auto btn = [&](unsigned id) -> bool {
+            return input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, id) != 0;
+        };
+
+        bool up    = btn(RETRO_DEVICE_ID_JOYPAD_UP);
+        bool down  = btn(RETRO_DEVICE_ID_JOYPAD_DOWN);
+        bool left  = btn(RETRO_DEVICE_ID_JOYPAD_LEFT);
+        bool right = btn(RETRO_DEVICE_ID_JOYPAD_RIGHT);
+        bool fire1 = btn(RETRO_DEVICE_ID_JOYPAD_A) || btn(RETRO_DEVICE_ID_JOYPAD_B);
+        bool fire2 = btn(RETRO_DEVICE_ID_JOYPAD_X) || btn(RETRO_DEVICE_ID_JOYPAD_Y);
+
+        g_towns->SetGamePadState(0, fire1, fire2, left, right, up, down, false, false, false);
+    }
+
+    // ── 2. Run one frame ───────────────────────────────────────────
+    // Run CPU & scheduled tasks for ~16.666ms (1/60th second in townsTime nanoseconds)
+    uint64_t target_time = g_towns->state.townsTime + 16666666;
+    while (g_towns->state.townsTime < target_time)
+    {
+        while (g_towns->state.townsTime <= g_towns->state.nextFastDevicePollingTime && 0 == g_towns->GetStopFlags())
+        {
+            g_towns->RunOneInstruction();
+            g_towns->pic.ProcessIRQ(g_towns->CPU(), g_towns->mem);
+        }
+
+        g_towns->RunScheduledTasks();
+        g_towns->RunFastDevicePolling();
+
+        if (0 != g_towns->GetStopFlags())
+        {
+            if (g_towns->CheckAbort()) break;
+        }
+    }
+
+    g_towns->ProcessSound(g_world);
+    g_towns->cdrom.UpdateCDDAState(g_towns->state.townsTime);
+
+    // ── 3. Video ───────────────────────────────────────────────────
+    if (video_cb)
+    {
+        TownsRender render;
+        render.Prepare(g_towns->crtc);
+        render.damperWireLine = g_towns->var.damperWireLine;
+        render.BuildImage(g_towns->GetUsingVRAM(), g_towns->crtc.GetPalette(), g_towns->crtc.chaseHQPalette);
+
+        auto img = render.GetImage();
+        if (img.wid > 0 && img.hei > 0)
+        {
+            video_cb(
+                img.rgba,
+                img.wid,
+                img.hei,
+                img.wid * 4
+            );
+        }
+    }
+
+    // ── 4. Audio ───────────────────────────────────────────────────
+    if (audio_batch_cb && g_sound)
+    {
+        if (!g_sound->pcm_buffer.empty())
+        {
+            size_t nframes = g_sound->pcm_buffer.size() / 2;
+            audio_batch_cb(g_sound->pcm_buffer.data(), nframes);
+            g_sound->pcm_buffer.clear();
+        }
+        else
+        {
+            // 735 stereo frames of silence for 1/60s frame at 44100Hz
+            static const int16_t silence[1470] = {0};
+            audio_batch_cb(silence, 735);
+        }
+    }
 }
 
 RETRO_API void retro_reset(void)                              { /* TODO */ }
