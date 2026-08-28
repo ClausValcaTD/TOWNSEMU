@@ -89,3 +89,5 @@ add_subdirectory(test386vm)
 
 #Serial to TCP Server Sample
 add_subdirectory(serversample)
+
+add_subdirectory(libretro)
