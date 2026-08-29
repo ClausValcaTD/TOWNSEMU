@@ -130,7 +130,7 @@ RETRO_API void retro_get_system_info(struct retro_system_info *info)
     std::memset(info, 0, sizeof(*info));
     info->library_name     = "TOWNSEMU";
     info->library_version  = "0.1.0";
-    info->valid_extensions = "cue|iso|bin";
+    info->valid_extensions = "cue|iso|bin|mds|mdf|ccd|chd";
     info->need_fullpath    = true;   // we open the disc image ourselves
     info->block_extract    = false;
 }

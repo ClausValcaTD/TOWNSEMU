@@ -1,5 +1,5 @@
-add_library(discimg discimg.h discimg.cpp)
-target_link_libraries(discimg cpputil)
+add_library(discimg discimg.h discimg.cpp chdimg.h chdimg.cpp)
+target_link_libraries(discimg cpputil chdr)
 target_include_directories(discimg PUBLIC .)
 
 add_executable(testmsf testmsf.cpp)
