@@ -263,7 +263,7 @@ foreach(ONE_TARGET ${TARGET_NAME})
 
 	# We suffered enough from the shared stdc++
 	if(UNIX AND NOT APPLE AND NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
-		target_link_libraries(${ONE_TARGET} pthread -static-libstdc++ -static-libgcc)
+		target_link_libraries(${ONE_TARGET} Threads::Threads -static-libstdc++ -static-libgcc)
 	endif()
 
 	if(ADDITIONAL_HEADER_PATH)
@@ -358,7 +358,7 @@ set_target_properties(${TARGET_NAME} PROPERTIES
 if(UNIX)
 	# Not supposed to be needed.
 	# Is g++ broken again?
-	target_link_libraries(${TARGET_NAME} pthread)
+	target_link_libraries(${TARGET_NAME} Threads::Threads)
 
 	# I don't want to do the following.
 	# After people have suffered more than 30 year, maybe 40,
