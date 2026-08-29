@@ -21,4 +21,9 @@ target_link_libraries(townsemu_libretro PRIVATE
     headless_mode
     townsrender
     discimg
+    townsargv
 )
+
+if(UNIX AND NOT ANDROID)
+    target_link_libraries(townsemu_libretro PRIVATE pthread)
+endif()
