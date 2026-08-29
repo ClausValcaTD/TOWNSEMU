@@ -21,4 +21,5 @@ target_link_libraries(townsemu_libretro PRIVATE
     headless_mode
     townsrender
     discimg
+    townsargv
 )

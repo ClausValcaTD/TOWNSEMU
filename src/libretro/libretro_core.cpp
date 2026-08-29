@@ -3,6 +3,7 @@
 #include "../towns/townsthread.h"
 #include "../towns/towns.h"
 #include "../main_cui/argv/townsargv.h"
+#include "../towns/render/render.h"
 
 #include <string>
 #include <cstring>
@@ -63,6 +64,7 @@ static std::string                   g_system_dir;
 static std::string                   g_save_dir;
 static std::string                   g_disc_path;
 static bool                          g_loaded = false;
+static TownsRender                   g_render;
 
 // Forward declaration
 static void towns_cleanup();
@@ -115,6 +117,7 @@ static void towns_cleanup()
         g_sound = nullptr;
     }
     g_loaded = false;
+    g_render = TownsRender();
 }
 
 RETRO_API void retro_deinit(void)
@@ -287,20 +290,18 @@ RETRO_API void retro_run(void)
     // ── 3. Video ───────────────────────────────────────────────────
     if (video_cb)
     {
-        TownsRender render;
-        render.Prepare(g_towns->crtc);
-        render.damperWireLine = g_towns->var.damperWireLine;
-        render.BuildImage(g_towns->GetUsingVRAM(), g_towns->crtc.GetPalette(), g_towns->crtc.chaseHQPalette);
+        g_render.Prepare(g_towns->crtc);
+        g_render.damperWireLine = g_towns->var.damperWireLine;
+        g_render.BuildImage(
+            g_towns->GetUsingVRAM(),
+            g_towns->crtc.GetPalette(),
+            g_towns->crtc.chaseHQPalette
+        );
 
-        auto img = render.GetImage();
+        auto img = g_render.GetImage();
         if (img.wid > 0 && img.hei > 0)
         {
-            video_cb(
-                img.rgba,
-                img.wid,
-                img.hei,
-                img.wid * 4
-            );
+            video_cb(img.rgba, img.wid, img.hei, img.wid * 4);
         }
     }
 
