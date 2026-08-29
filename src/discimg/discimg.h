@@ -19,6 +19,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <memory>
+#include "chdimg.h"
 
 // MDS/MDF implementation is based on:
 //   https://problemkaputt.de/psx-spx.htm#cdromdiskimagesmdsmdfalcohol120
@@ -51,6 +53,8 @@ public:
 		ERROR_MDS_FILE_SIZE_DOES_NOT_MAKE_SENSE,
 		ERROR_MDS_UNEXPECTED_NUMBER,
 		ERROR_MDS_BINARY_TOO_SHORT,
+		ERROR_CHD_NOT_A_CD,
+		ERROR_CHD_INVALID_METADATA,
 	};
 	enum
 	{
@@ -69,6 +73,7 @@ public:
 		FILETYPE_CUE,
 		FILETYPE_MDS,
 		FILETYPE_CCD,
+		FILETYPE_CHD,
 	};
 	enum
 	{
@@ -303,6 +308,8 @@ public:
 	std::vector <DiscLayout> layout;
 	std::vector <unsigned char> binaryCache;
 
+	std::shared_ptr<CHDImage> chd;
+
 	class TrackTime
 	{
 	public:
@@ -333,6 +340,10 @@ public:
 public:
 	unsigned int OpenCCD(const std::string &fName);
 
+private:
+	unsigned int OpenCHD(const std::string &fName);
+
+public:
 	/*! Cache binary file.  It may take large memory.
 	    If it is the multi-binary image, it only reads the first binary.
 	*/

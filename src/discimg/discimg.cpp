@@ -21,6 +21,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <ctype.h>
 
 #include "discimg.h"
+#include "chdimg.h"
 #include "cpputil.h"
 
 
@@ -124,6 +125,10 @@ DiscImage::DiscImage()
 		return "MDF Binary File Size does not make sense.";
 	case ERROR_MDS_UNEXPECTED_NUMBER:
 		return "MDS Unexpected Number.";
+	case ERROR_CHD_NOT_A_CD:
+		return "CHD file is not a CD image.";
+	case ERROR_CHD_INVALID_METADATA:
+		return "CHD track information is missing or broken.";
 	}
 	return "Undefined error.";
 }
@@ -137,6 +142,7 @@ void DiscImage::CleanUp(void)
 	tracks.clear();
 	layout.clear();
 	binaryCache.clear();
+	chd=nullptr;
 }
 unsigned int DiscImage::Open(const std::string &fName)
 {
@@ -195,6 +201,10 @@ unsigned int DiscImage::Open(const std::string &fName)
 	if(".CCD"==ext)
 	{
 		return OpenCCD(fName);
+	}
+	if(".CHD"==ext)
+	{
+		return OpenCHD(fName);
 	}
 	return ERROR_UNSUPPORTED;
 }
@@ -1225,6 +1235,37 @@ std::vector <unsigned char> DiscImage::ReadSectorMODE1(unsigned int HSG,unsigned
 {
 	std::vector <unsigned char> data;
 
+	if(nullptr != chd)
+	{
+		if(0 < tracks.size() && (tracks[0].trackType == TRACK_MODE1_DATA || tracks[0].trackType == TRACK_MODE2_DATA))
+		{
+			if(HSG + numSec <= tracks[0].end.ToHSG() + 1)
+			{
+				auto sectorIntoTrack = HSG - tracks[0].start.ToHSG();
+				auto locationInTrack = sectorIntoTrack * tracks[0].sectorLength;
+				auto filePtr = tracks[0].locationInFile + locationInTrack;
+
+				data.resize(numSec * MODE1_BYTES_PER_SECTOR);
+				if(MODE1_BYTES_PER_SECTOR == tracks[0].sectorLength)
+				{
+					chd->Read(data.data(), filePtr, data.size());
+				}
+				else
+				{
+					unsigned int dataPointer = 0;
+					for(int i = 0; i < (int)numSec; ++i)
+					{
+						filePtr += 16;
+						chd->Read(data.data() + dataPointer, filePtr, MODE1_BYTES_PER_SECTOR);
+						filePtr += tracks[0].sectorLength - 16;
+						dataPointer += MODE1_BYTES_PER_SECTOR;
+					}
+				}
+			}
+		}
+		return data;
+	}
+
 	if(0<binaries.size())
 	{
 		if(0==binaryCache.size())
@@ -1297,6 +1338,48 @@ std::vector <unsigned char> DiscImage::ReadSectorRAW(unsigned int HSG,unsigned i
 {
 	std::vector <unsigned char> data;
 
+	if(nullptr != chd)
+	{
+		if(0 < tracks.size() && (tracks[0].trackType == TRACK_MODE1_DATA || tracks[0].trackType == TRACK_MODE2_DATA))
+		{
+			if(HSG + numSec <= tracks[0].end.ToHSG() + 1)
+			{
+				auto sectorIntoTrack = HSG - tracks[0].start.ToHSG();
+				auto locationInTrack = sectorIntoTrack * tracks[0].sectorLength;
+				auto filePtr = tracks[0].locationInFile + locationInTrack;
+
+				data.resize(numSec * RAW_BYTES_PER_SECTOR);
+				if(MODE1_BYTES_PER_SECTOR == tracks[0].sectorLength)
+				{
+					for(auto &d : data) { d = 0; }
+					unsigned int dataPointer = 0;
+					for(int i = 0; i < (int)numSec; ++i)
+					{
+						chd->Read(data.data() + 4 + dataPointer, filePtr, MODE1_BYTES_PER_SECTOR);
+						filePtr += MODE1_BYTES_PER_SECTOR;
+						dataPointer += RAW_BYTES_PER_SECTOR;
+					}
+				}
+				else if(RAW_BYTES_PER_SECTOR <= tracks[0].sectorLength)
+				{
+					unsigned int dataPointer = 0;
+					for(int i = 0; i < (int)numSec; ++i)
+					{
+						filePtr += 12;
+						chd->Read(data.data() + dataPointer, filePtr, RAW_BYTES_PER_SECTOR);
+						filePtr += tracks[0].sectorLength - 12;
+						dataPointer += RAW_BYTES_PER_SECTOR;
+					}
+				}
+				else
+				{
+					for(auto &d : data) { d = 0; }
+				}
+			}
+		}
+		return data;
+	}
+
 	if(0<binaries.size())
 	{
 		std::ifstream ifp;
@@ -1350,6 +1433,48 @@ std::vector <unsigned char> DiscImage::ReadSectorRAW(unsigned int HSG,unsigned i
 std::vector <unsigned char> DiscImage::ReadSectorMODE2(unsigned int HSG,unsigned int numSec) const
 {
 	std::vector <unsigned char> data;
+
+	if(nullptr != chd)
+	{
+		if(0 < tracks.size() && (tracks[0].trackType == TRACK_MODE1_DATA || tracks[0].trackType == TRACK_MODE2_DATA))
+		{
+			if(HSG + numSec <= tracks[0].end.ToHSG() + 1)
+			{
+				auto sectorIntoTrack = HSG - tracks[0].start.ToHSG();
+				auto locationInTrack = sectorIntoTrack * tracks[0].sectorLength;
+				auto filePtr = tracks[0].locationInFile + locationInTrack;
+
+				data.resize(numSec * RAW_BYTES_PER_SECTOR);
+				if(MODE1_BYTES_PER_SECTOR == tracks[0].sectorLength)
+				{
+					for(auto &d : data) { d = 0; }
+					unsigned int dataPointer = 0;
+					for(int i = 0; i < (int)numSec; ++i)
+					{
+						chd->Read(data.data() + 4 + dataPointer, filePtr, MODE2_BYTES_PER_SECTOR);
+						filePtr += MODE1_BYTES_PER_SECTOR;
+						dataPointer += RAW_BYTES_PER_SECTOR;
+					}
+				}
+				else if(MODE2_BYTES_PER_SECTOR <= tracks[0].sectorLength)
+				{
+					unsigned int dataPointer = 0;
+					for(int i = 0; i < (int)numSec; ++i)
+					{
+						filePtr += 16;
+						chd->Read(data.data() + 4 + dataPointer, filePtr, MODE2_BYTES_PER_SECTOR);
+						filePtr += tracks[0].sectorLength - 16;
+						dataPointer += RAW_BYTES_PER_SECTOR;
+					}
+				}
+				else
+				{
+					for(auto &d : data) { d = 0; }
+				}
+			}
+		}
+		return data;
+	}
 
 	if(0<binaries.size())
 	{
@@ -1430,6 +1555,24 @@ int DiscImage::GetTrackFromMSF(MinSecFrm MSF) const
 std::vector <unsigned char> DiscImage::GetWave(MinSecFrm startMSF,MinSecFrm endMSF) const
 {
 	std::vector <unsigned char> wave;
+	if(nullptr != chd)
+	{
+		if(0 < tracks.size() && startMSF < endMSF)
+		{
+			auto startHSG = startMSF.ToHSG();
+			auto endHSG = endMSF.ToHSG();
+			uint64_t readFrom = (uint64_t)startHSG * AUDIO_SECTOR_SIZE;
+			uint64_t readTo = (uint64_t)endHSG * AUDIO_SECTOR_SIZE;
+			if(readFrom < readTo)
+			{
+				uint64_t readSize = (readTo - readFrom) & (~3ULL);
+				wave.resize(readSize);
+				chd->Read(wave.data(), readFrom, readSize);
+			}
+		}
+		return wave;
+	}
+
 	if(0<tracks.size() && startMSF<endMSF)
 	{
 		auto startHSG=startMSF.ToHSG();
@@ -1578,4 +1721,52 @@ DiscImage::TrackTime DiscImage::DiscTimeToTrackTime(MinSecFrm discMSF) const
 	}
 	msf.frm=cpputil::Atoi(str);
 	return true;
+}
+
+unsigned int DiscImage::OpenCHD(const std::string &fName)
+{
+	auto newCHD = std::make_shared<CHDImage>();
+	switch(newCHD->Open(fName))
+	{
+	case CHDImage::CHDERROR_NOERROR:
+		break;
+	case CHDImage::CHDERROR_CANNOT_OPEN:
+		return ERROR_CANNOT_OPEN;
+	case CHDImage::CHDERROR_NOT_A_CD:
+		return ERROR_CHD_NOT_A_CD;
+	case CHDImage::CHDERROR_INVALID_METADATA:
+		return ERROR_CHD_INVALID_METADATA;
+	case CHDImage::CHDERROR_UNSUPPORTED_TRACK_TYPE:
+		return ERROR_UNSUPPORTED;
+	}
+
+	fileType = FILETYPE_CHD;
+	chd = newCHD;
+	num_sectors = chd->GetNumSectors();
+	totalBinLength = chd->GetImageSize();
+
+	auto &CHDTracks = chd->GetTracks();
+	for(auto &src : CHDTracks)
+	{
+		Track dst;
+		switch(src.trackType)
+		{
+		case CHDImage::TRACK_MODE1_DATA: dst.trackType = TRACK_MODE1_DATA; break;
+		case CHDImage::TRACK_MODE2_DATA: dst.trackType = TRACK_MODE2_DATA; break;
+		case CHDImage::TRACK_AUDIO:      dst.trackType = TRACK_AUDIO;      break;
+		default: return ERROR_UNSUPPORTED;
+		}
+		dst.start = HSGtoMSF(src.index01LBA);
+		dst.locationInFile = src.locationInImage;
+		dst.sectorLength = src.sectorLength;
+		tracks.push_back(dst);
+	}
+	// Set LBAEND for each track
+	for(size_t i=0; i<tracks.size(); i++)
+	{
+		auto endLBA = (i+1<tracks.size() ?
+			CHDTracks[i+1].index01LBA : num_sectors) - 1;
+		tracks[i].end = HSGtoMSF(endLBA);
+	}
+	return ERROR_NOERROR;
 }
