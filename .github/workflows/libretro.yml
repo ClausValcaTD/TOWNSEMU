@@ -15,19 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: mkdir
+        run: mkdir ci_libretro_win
+
       - name: Configure
         run: cmake ../src -DCMAKE_BUILD_TYPE=Release
         working-directory: ./ci_libretro_win
         shell: cmd
         env:
           RUNNER_TEMP: ${{ runner.temp }}
-        # اعمل الفولدر الأول
-      - name: mkdir
-        run: mkdir ci_libretro_win
-
-      - name: Configure CMake
-        run: cmake ../src
-        working-directory: ./ci_libretro_win
 
       - name: Build
         run: cmake --build . --config Release --target townsemu_libretro --parallel

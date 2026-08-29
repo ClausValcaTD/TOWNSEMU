@@ -6,10 +6,10 @@ project(TSUGARU)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(UNIX)
-	set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS} -Wno-unused-variable)
-	set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -Wno-unused-variable)
+	add_compile_options(-Wno-unused-variable)
 endif()
 
 
