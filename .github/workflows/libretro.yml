@@ -1,0 +1,104 @@
+name: Libretro Core Build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:  # يخليك تشغله يدوي من GitHub
+
+jobs:
+
+  # ── Windows (.dll) ─────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake ../src -DCMAKE_BUILD_TYPE=Release
+        working-directory: ./ci_libretro_win
+        shell: cmd
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        # اعمل الفولدر الأول
+      - name: mkdir
+        run: mkdir ci_libretro_win
+
+      - name: Configure CMake
+        run: cmake ../src
+        working-directory: ./ci_libretro_win
+
+      - name: Build
+        run: cmake --build . --config Release --target townsemu_libretro --parallel
+        working-directory: ./ci_libretro_win
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: townsemu_libretro_windows
+          path: ci_libretro_win/libretro/Release/townsemu_libretro.dll
+
+  # ── Linux (.so) ────────────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake build-essential \
+            libglu1-mesa-dev mesa-common-dev \
+            libasound2-dev
+
+      - name: mkdir
+        run: mkdir ci_libretro_linux
+
+      - name: Configure CMake
+        run: cmake ../src -DCMAKE_BUILD_TYPE=Release
+        working-directory: ./ci_libretro_linux
+
+      - name: Build
+        run: cmake --build . --config Release --target townsemu_libretro --parallel
+        working-directory: ./ci_libretro_linux
+
+      - name: Upload SO
+        uses: actions/upload-artifact@v4
+        with:
+          name: townsemu_libretro_linux
+          path: ci_libretro_linux/libretro/townsemu_libretro.so
+
+  # ── Android (.so) ──────────────────────────────────────────────
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
+      - name: mkdir
+        run: mkdir ci_libretro_android
+
+      - name: Configure CMake (arm64-v8a)
+        run: |
+          cmake ../src \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release
+        working-directory: ./ci_libretro_android
+
+      - name: Build
+        run: cmake --build . --target townsemu_libretro --parallel
+        working-directory: ./ci_libretro_android
+
+      - name: Upload Android SO
+        uses: actions/upload-artifact@v4
+        with:
+          name: townsemu_libretro_android_arm64
+          path: ci_libretro_android/libretro/townsemu_libretro.so
