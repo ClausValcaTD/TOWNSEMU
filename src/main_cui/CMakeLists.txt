@@ -25,7 +25,7 @@ target_link_libraries(${TARGET_NAME}
 if(UNIX)
 	# Not supposed to be needed.
 	# Is g++ broken again?
-	target_link_libraries(${TARGET_NAME} pthread)
+	target_link_libraries(${TARGET_NAME} Threads::Threads)
 
 	# I don't want to do the following.
 	# After people have suffered more than 30 year, maybe 40,

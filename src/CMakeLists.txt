@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(TSUGARU)
 
+find_package(Threads REQUIRED)
+
 # Uncomment the following line to compile CPU core in high-fidelity mode.
 # add_compile_definitions(TSUGARU_I486_HIGH_FIDELITY)
 

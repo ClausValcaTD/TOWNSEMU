@@ -5,7 +5,7 @@ elseif(APPLE)
 	mark_as_advanced(COCOA_LIB)
 	set(LIBS yssimplesound_macosx ${COCOA_LIB})
 elseif(UNIX)
-	set(LIBS yssimplesound_linux_alsa pthread)
+	set(LIBS yssimplesound_linux_alsa Threads::Threads)
 endif()
 
 

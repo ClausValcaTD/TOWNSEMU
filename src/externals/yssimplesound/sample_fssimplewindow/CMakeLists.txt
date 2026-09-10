@@ -276,7 +276,7 @@ foreach(ONE_TARGET ${TARGET_NAME})
 
 	# We suffered enough from the shared stdc++
 	if(UNIX AND NOT APPLE AND NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
-		target_link_libraries(${ONE_TARGET} pthread -static-libstdc++ -static-libgcc)
+		target_link_libraries(${ONE_TARGET} Threads::Threads -static-libstdc++ -static-libgcc)
 	endif()
 
 	if(ADDITIONAL_HEADER_PATH)

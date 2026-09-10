@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(TSUGARU_GUI)
 
+find_package(Threads REQUIRED)
+
 enable_testing()
 
 set(CMAKE_CXX_STANDARD 17)
